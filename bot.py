@@ -6,33 +6,27 @@ from datetime import datetime
 # ── ตั้งค่า ──────────────────────────────────
 TELEGRAM_TOKEN   = "8664989808:AAF2N16H0MqNfYjpSGMQiwv1NSQtSISgnXI"
 TELEGRAM_CHAT_ID = "8028512511"
-FINNHUB_KEY      = "d6rt02pr01qrri55enhgd6rt02pr01qrri55eni0"
-
 SYMBOLS = {
-    # Forex
     "forex": [
-        "OANDA:EUR_USD","OANDA:GBP_USD","OANDA:USD_JPY",
-        "OANDA:AUD_USD","OANDA:USD_CHF","OANDA:USD_CAD",
-        "OANDA:NZD_USD","OANDA:EUR_GBP","OANDA:EUR_JPY",
-        "OANDA:GBP_JPY","OANDA:AUD_JPY","OANDA:CHF_JPY",
-        "OANDA:CAD_JPY","OANDA:NZD_JPY","OANDA:EUR_AUD",
-        "OANDA:EUR_CAD","OANDA:EUR_CHF","OANDA:EUR_NZD",
-        "OANDA:GBP_AUD","OANDA:GBP_CAD","OANDA:GBP_CHF",
-        "OANDA:GBP_NZD","OANDA:AUD_CAD","OANDA:AUD_CHF",
-        "OANDA:AUD_NZD","OANDA:CAD_CHF","OANDA:NZD_CAD",
-        "OANDA:NZD_CHF",
-        # Commodities
-        "OANDA:XAU_USD","OANDA:XAG_USD","OANDA:BCO_USD",
-        "OANDA:WTICO_USD","OANDA:NATGAS_USD","OANDA:XCU_USD",
+        "EURUSD=X","GBPUSD=X","USDJPY=X",
+        "AUDUSD=X","USDCHF=X","USDCAD=X",
+        "NZDUSD=X","EURGBP=X","EURJPY=X",
+        "GBPJPY=X","AUDJPY=X","CHFJPY=X",
+        "CADJPY=X","NZDJPY=X","EURAUD=X",
+        "EURCAD=X","EURCHF=X","EURNZD=X",
+        "GBPAUD=X","GBPCAD=X","GBPCHF=X",
+        "GBPNZD=X","AUDCAD=X","AUDCHF=X",
+        "AUDNZD=X","CADCHF=X","NZDCAD=X",
+        "NZDCHF=X",
+        "XAUUSD=X","XAGUSD=X","BZ=F",
+        "CL=F","NG=F","HG=F",
     ],
-    # Crypto
     "crypto": [
-        "BINANCE:BTCUSDT","BINANCE:ETHUSDT","BINANCE:SOLUSDT",
-        "BINANCE:BNBUSDT","BINANCE:XRPUSDT","BINANCE:ADAUSDT",
-        "BINANCE:DOGEUSDT","BINANCE:AVAXUSDT","BINANCE:LTCUSDT",
-        "BINANCE:TRXUSDT","BINANCE:ETCUSDT",
+        "BTC-USD","ETH-USD","SOL-USD",
+        "BNB-USD","XRP-USD","ADA-USD",
+        "DOGE-USD","AVAX-USD","LTC-USD",
+        "TRX-USD","ETC-USD",
     ],
-    # หุ้น
     "stock": [
         "AAPL","TSLA","AMZN","GOOGL","MSFT",
         "META","NFLX","NVDA","BABA","UBER",
@@ -43,13 +37,13 @@ SYMBOLS = {
 
 PIVOT_LEN    = 8
 MIN_WAVE_PCT = 0.5
-RESOLUTION   = "1"
 COUNT        = 200
 
-# ── เก็บ fingerprint ไว้ในหน่วยความจำ ────────
 last_fingerprint = {}
 
-# ── Telegram ─────────────────────────────────
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
 def send_telegram(msg):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -61,33 +55,24 @@ def send_telegram(msg):
     except Exception as e:
         print(f"Telegram error: {e}")
 
-# ── Finnhub ───────────────────────────────────
-def fetch_ohlc(sym, endpoint):
-    now  = int(time.time())
-    frm  = now - 60 * COUNT
-    url  = f"https://finnhub.io/api/v1/{endpoint}/candle"
-    params = {
-        "symbol": sym,
-        "resolution": RESOLUTION,
-        "from": frm,
-        "to": now,
-        "token": FINNHUB_KEY
-    }
+def fetch_ohlc(sym):
     try:
-        r = requests.get(url, params=params, timeout=15)
-        d = r.json()
-        if not d or d.get("s") == "no_data" or "c" not in d:
+        ticker = yf.Ticker(sym)
+        df = ticker.history(period="1d", interval="1m")
+        if df is None or len(df) < 30:
             return None
         bars = []
-        for i in range(len(d["c"]) - 1):
-            if d["c"][i] is not None:
-                bars.append({"h": d["h"][i], "l": d["l"][i], "c": d["c"][i]})
-        return bars if len(bars) >= 30 else None
+        for _, row in df.iterrows():
+            bars.append({
+                "h": row["High"],
+                "l": row["Low"],
+                "c": row["Close"]
+            })
+        return bars
     except Exception as e:
         print(f"fetch error {sym}: {e}")
         return None
 
-# ── Pivot ─────────────────────────────────────
 def find_pivots(data, n):
     hi, lo = [], []
     for i in range(n, len(data) - n):
@@ -116,7 +101,6 @@ def build_swing_seq(hi, lo, max_pts):
     seq.reverse()
     return seq
 
-# ── Detect Impulse Wave ───────────────────────
 def detect_impulse(sym, data):
     hi, lo = find_pivots(data, PIVOT_LEN)
     if len(hi) < 3 or len(lo) < 3:
@@ -145,7 +129,6 @@ def detect_impulse(sym, data):
                 break
     return signals
 
-# ── Format Message ────────────────────────────
 def format_msg(sig):
     now   = datetime.now().strftime("%Y-%m-%d %H:%M")
     price = f"{sig['price']:.6g}"
@@ -159,38 +142,33 @@ def format_msg(sig):
             f"📐 {sig['detail']}\n"
             f"🕐 {now}")
 
-# ── Main Scan ─────────────────────────────────
 def run_bot():
     now = datetime.now().strftime("%H:%M")
     print(f"=== เริ่มสแกน 1M {now} ===")
 
-    all_symbols = []
-    for endpoint, syms in SYMBOLS.items():
+    for category, syms in SYMBOLS.items():
         for sym in syms:
-            all_symbols.append((sym, endpoint))
-
-    for sym, endpoint in all_symbols:
-        data = fetch_ohlc(sym, endpoint)
-        if not data:
-            print(f"{sym}: ข้อมูลไม่พอ")
-            continue
-        sigs = detect_impulse(sym, data)
-        for sig in sigs:
-            key = f"{sym}:{sig['type']}"
-            if last_fingerprint.get(key) != sig["fp"]:
-                last_fingerprint[key] = sig["fp"]
-                send_telegram(format_msg(sig))
-                print(f"ส่งสัญญาณใหม่: {key}")
-            else:
-                print(f"ลูกศรเดิม ข้าม: {key}")
-        time.sleep(0.3)
+            data = fetch_ohlc(sym)
+            if not data:
+                print(f"{sym}: ข้อมูลไม่พอ")
+                continue
+            sigs = detect_impulse(sym, data)
+            for sig in sigs:
+                key = f"{sym}:{sig['type']}"
+                if last_fingerprint.get(key) != sig["fp"]:
+                    last_fingerprint[key] = sig["fp"]
+                    send_telegram(format_msg(sig))
+                    print(f"ส่งสัญญาณใหม่: {key}")
+                else:
+                    print(f"ลูกศรเดิม ข้าม: {key}")
+            time.sleep(0.3)
 
     print("=== สแกนเสร็จสิ้น ===")
 
-# ── Schedule ──────────────────────────────────
 print("Bot started")
 run_bot()
 schedule.every(1).minutes.do(run_bot)
 while True:
     schedule.run_pending()
     time.sleep(10)
+    
