@@ -1,8 +1,9 @@
-import time
+import os
 import requests
+import time
 import schedule
+import yfinance as yf
 from datetime import datetime
-
 # ── ตั้งค่า ──────────────────────────────────
 TELEGRAM_TOKEN   = "8664989808:AAF2N16H0MqNfYjpSGMQiwv1NSQtSISgnXI"
 TELEGRAM_CHAT_ID = "8028512511"
